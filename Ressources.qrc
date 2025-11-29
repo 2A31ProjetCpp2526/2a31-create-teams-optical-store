@@ -1,0 +1,7 @@
+<RCC>
+    <qresource prefix="/img">
+        <file>img/Capture d’écran 2025-10-04 210940.png</file>
+        <file>img/Capture d’écran 2025-10-05 223411.png</file>
+        <file>img/logo.png</file>
+    </qresource>
+</RCC>
