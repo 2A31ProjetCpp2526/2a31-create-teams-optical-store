@@ -41,6 +41,8 @@ public:
     bool supprimer(int id);
     bool modifier();
     bool recuperer(int id);
+    QSqlQuery rechercher(int id);
+
 };
 
 #endif // EMPLOYE_H
