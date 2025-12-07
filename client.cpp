@@ -42,7 +42,12 @@ bool Client::ajouter()
     query.bindValue(":age", age);
     query.bindValue(":statut", statut);
 
-    return query.exec();
+    if (!query.exec()) {
+        qDebug() << "Erreur SQL:" << query.lastError().text();  // <--- Log SQL error here
+        return false;
+    }
+    return true;
+    //return query.exec();
 }
 
 bool Client::supprimer(int id)

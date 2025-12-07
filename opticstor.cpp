@@ -18,23 +18,103 @@
 #include <QFileDialog>
 #include <QDesktopServices>
 #include <QDir>
+#include <QMenu>
+#include <QAction>
+#include <QDialog>
+#include <QFormLayout>
+#include <QLineEdit>
+#include <QSpinBox>
+#include <QTextEdit>
+#include <QFile>
+#include <QTextStream>
  //#include <QtCharts/QChartView>
  //#include <QtCharts/QPieSeries>
 #include <QtCharts>
 
+#include <QtCharts/QChartView>
+#include <QtCharts/QPieSeries>
+#include <QtCharts/QPieSlice>
+#include <QPdfWriter>
+#include <QPainter>
+#include <QPageSize>
+#include <QFileInfo>
+#include <QDateTime>
+#include <QSerialPort>
+#include <QSerialPortInfo>
+
 
 opticstor::opticstor(QWidget *parent):
     QMainWindow(parent),
-    ui(new Ui::opticstor)
+    ui(new Ui_opticstor)
 {
     ui->setupUi(this);
+    //-------------camerastuff---------.
+    connect(ui->next, &QPushButton::clicked,ui->camera, &camerawidget::nextGlasses);
+    //ui->camera->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+    // After ui->setupUi(this);
+    /* QVBoxLayout* layout = new QVBoxLayout(ui->camera->parentWidget()); // the QGroupBox
+    layout->setContentsMargins(0, 0, 0, 0);        // remove extra spacing
+    layout->addWidget(ui->camera);                 // add the camera widget to the layout
+    layout->setAlignment(ui->camera, Qt::AlignCenter); // center it inside the layout*/
+    QVBoxLayout* layout = qobject_cast<QVBoxLayout*>(ui->groupBox_13->layout());
+    if (!layout) {
+        layout = new QVBoxLayout(ui->groupBox_13);
+        ui->groupBox_13->setLayout(layout);
+    }
+    /*// In MainWindow constructor
+    qDebug() << "GUI initializing...";
+    show();*/
 
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+
+    ui->camera->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    ui->camera->setFixedSize(231, 231);
+
+    layout->addWidget(ui->camera, 0, Qt::AlignCenter);
+
+    worker = new cameraworker(0, this);
+    connect(worker, &cameraworker::frameReady, ui->camera, &camerawidget::onFrame);
+    worker->start();
+    //------------------------------------------
+
+    prixtotal=0;
+    rech=0;
+    ui->commandsc->setCurrentIndex(1);
+    connect(ui->ajout, &QPushButton::clicked, this, &opticstor::ajoutcommande);
+    connect(ui->supp, &QPushButton::clicked, this, &opticstor::supprimcommande);
+    connect(ui->update, &QPushButton::clicked, this, &opticstor::updatecommande);
+    connect(ui->autre, &QPushButton::clicked, this, &opticstor::autrecmd);
+    connect(ui->updatec, &QPushButton::clicked, this, &opticstor::updmen);
+    connect(ui->stat, &QPushButton::clicked,
+            this, &opticstor::on_showChartButton_clicked);
+    connect(ui->tablecmd, &QTableWidget::cellClicked,this, &opticstor::on_commandSelected);
+
+    connect(ui->pdff, &QPushButton::clicked,
+            this, &opticstor::on_generatePDFButton_clicked);
+
+    connect(ui->orderbox, SIGNAL(currentIndexChanged(int)),
+            this, SLOT(affichecommande()));
+    loadtypesmarquesComboBox();
+    loadclientComboBox();
+    loademp();
+    affichecommande();
     // Connexions pour la navigation
     connect(ui->commandebut, &QPushButton::clicked, this, &opticstor::onGestCommande);
     connect(ui->gest, &QPushButton::clicked, this, &opticstor::onGest);
     connect(ui->produitbut, &QPushButton::clicked, this, &opticstor::onprod);
     connect(ui->emplbut, &QPushButton::clicked, this, &opticstor::onemp);
     connect(ui->fournbut, &QPushButton::clicked, this, &opticstor::onfourn);
+    // Ravitalement and Feedback buttons in the ravitaillement tab
+    // Use findChild to be resilient to generated-ui member name changes
+    {
+        QPushButton* pb = findChild<QPushButton*>("pushButton");
+        if (pb) connect(pb, &QPushButton::clicked, this, &opticstor::on_ajoutravitalement_clicked);
+    }
+    {
+        QPushButton* pb2 = findChild<QPushButton*>("pushButton_2");
+        if (pb2) connect(pb2, &QPushButton::clicked, this, &opticstor::on_feedback_clicked);
+    }
     //connect(ui->feedback_btn, &QPushButton::clicked, this, &opticstor::onFeedbackPage);
 
     // Configuration des validateurs
@@ -75,12 +155,12 @@ opticstor::opticstor(QWidget *parent):
     ui->id_fournisseur_supp->setValidator(new QIntValidator(0, 999999, this));
 
     // Commandes
-    ui->id_commande->setValidator(new QIntValidator(0, 999999, this));
+   /* ui->id_commande->setValidator(new QIntValidator(0, 999999, this));
     ui->id_client_commande->setValidator(new QIntValidator(0, 999999, this));
     ui->id_employe_commande->setValidator(new QIntValidator(0, 999999, this));
     ui->prix_total_commande->setValidator(new QDoubleValidator(0, 999999, 2, this));
     ui->id_commande_supp->setValidator(new QIntValidator(0, 999999, this));
-    ui->id_commande_rech->setValidator(new QIntValidator(0, 999999, this));
+    ui->id_commande_rech->setValidator(new QIntValidator(0, 999999, this));*/
 
     // ==================== CONFIGURATION FEEDBACK ====================
     ui->id_feedback->setValidator(new QIntValidator(0, 999999, this));
@@ -108,25 +188,25 @@ opticstor::opticstor(QWidget *parent):
     ui->table_produits->setSelectionMode(QAbstractItemView::SingleSelection);
     ui->table_produits->setEditTriggers(QAbstractItemView::NoEditTriggers);
 
-    ui->table_fournisseurs->setSelectionBehavior(QAbstractItemView::SelectRows);
-    ui->table_fournisseurs->setSelectionMode(QAbstractItemView::SingleSelection);
-    ui->table_fournisseurs->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    ui->tableWidget_22->setSelectionBehavior(QAbstractItemView::SelectRows);
+    ui->tableWidget_22->setSelectionMode(QAbstractItemView::SingleSelection);
+    ui->tableWidget_22->setEditTriggers(QAbstractItemView::NoEditTriggers);
 
     // Configuration QTableWidget pour commandes
-    ui->tableWidget_2->setSelectionBehavior(QAbstractItemView::SelectRows);
+   /* ui->tableWidget_2->setSelectionBehavior(QAbstractItemView::SelectRows);
     ui->tableWidget_2->setSelectionMode(QAbstractItemView::SingleSelection);
     ui->tableWidget_2->setEditTriggers(QAbstractItemView::NoEditTriggers);
     ui->tableWidget_2->setColumnCount(5);
     ui->tableWidget_2->setHorizontalHeaderLabels(QStringList() << "ID Commande" << "ID Client" << "ID Employé" << "Date" << "Prix Total");
     ui->tableWidget_2->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-
+*/
     // Configuration QTableWidget pour clients
-    ui->tabcl_2->setSelectionBehavior(QAbstractItemView::SelectRows);
+    /*ui->tabcl_2->setSelectionBehavior(QAbstractItemView::SelectRows);
     ui->tabcl_2->setSelectionMode(QAbstractItemView::SingleSelection);
     ui->tabcl_2->setEditTriggers(QAbstractItemView::NoEditTriggers);
     ui->tabcl_2->setColumnCount(3);
     ui->tabcl_2->setHorizontalHeaderLabels(QStringList() << "ID Client" << "Email" << "Code Produit");
-    ui->tabcl_2->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    ui->tabcl_2->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);*/
 
     // Configuration de la table des employés
     ui->table_employes->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -141,8 +221,8 @@ opticstor::opticstor(QWidget *parent):
     // Afficher les données initiales
     ui->tableView->setModel(tmpClient.afficher());
     ui->table_produits->setModel(tmpProduit.afficher());
-    ui->table_fournisseurs->setModel(tmpFournisseur.afficher());
-    remplirTableCommandes();
+    ui->tableWidget_22->setModel(tmpFournisseur.afficher());
+    //remplirTableCommandes();
     remplirTableTestsOrdonnance();
 
     // Connexions pour les boutons
@@ -165,25 +245,50 @@ opticstor::opticstor(QWidget *parent):
     connect(ui->ajouter_produit, &QPushButton::clicked, this, &opticstor::on_ajouter_produit_clicked);
     connect(ui->supprimer_produit, &QPushButton::clicked, this, &opticstor::on_supprimer_produit_clicked);
     connect(ui->modifier_produit, &QPushButton::clicked, this, &opticstor::on_modifier_produit_clicked);
-    // connect(ui->rechercher_produit, &QPushButton::clicked, this, &opticstor::on_rechercher_produit_clicked);
-    // connect(ui->actualiser_produit, &QPushButton::clicked, this, &opticstor::on_actualiser_produit_clicked);
+    connect(ui->rechercher_produit, &QPushButton::clicked, this, &opticstor::on_rechercher_produit_clicked);
 
     // Fournisseurs
     connect(ui->ajouter_fournisseur, &QPushButton::clicked, this, &opticstor::on_ajouter_fournisseur_clicked);
     connect(ui->supprimer_fournisseur, &QPushButton::clicked, this, &opticstor::on_supprimer_fournisseur_clicked);
     connect(ui->modifier_fournisseur, &QPushButton::clicked, this, &opticstor::on_modifier_fournisseur_clicked);
-    // connect(ui->rechercher_fournisseur, &QPushButton::clicked, this, &opticstor::on_rechercher_fournisseur_clicked);
-    // connect(ui->actualiser_fournisseur, &QPushButton::clicked, this, &opticstor::on_actualiser_fournisseur_clicked);
+    // The UI uses 'recherchebtn' for the fournisseur search button
+    if (ui->recherchebtn) connect(ui->recherchebtn, &QPushButton::clicked, this, &opticstor::on_rechercher_fournisseur_clicked);
+    
+    // Connexions optionnelles pour ravitaillement / feedback / statistiques (si les boutons existent dans l'UI)
+    // Ces connexions seront actives si les boutons correspondants sont ajoutés à l'interface
+    QPushButton* ravitalementBtn = findChild<QPushButton*>("ravitalement");
+    if (ravitalementBtn) {
+        connect(ravitalementBtn, &QPushButton::clicked, this, &opticstor::on_ajoutravitalement_clicked);
+    }
+    QPushButton* feedbackBtn = findChild<QPushButton*>("feedback");
+    if (feedbackBtn) {
+        connect(feedbackBtn, &QPushButton::clicked, this, &opticstor::on_feedback_clicked);
+    }
+    QPushButton* triparnomBtn = findChild<QPushButton*>("triparnom");
+    if (triparnomBtn) {
+        connect(triparnomBtn, &QPushButton::clicked, this, &opticstor::on_triparnom_clicked);
+    }
+    QPushButton* exportexelBtn = findChild<QPushButton*>("exportexel");
+    if (exportexelBtn) {
+        connect(exportexelBtn, &QPushButton::clicked, this, &opticstor::on_exportexel_clicked);
+    }
+    QPushButton* statBtn = findChild<QPushButton*>("stat");
+    if (statBtn) {
+        connect(statBtn, &QPushButton::clicked, this, &opticstor::on_stat_fournisseur_clicked);
+    }
+    
+    // Initialiser ravitTable à nullptr par défaut
+    ravitTable = nullptr;;
 
     // Commandes
-    connect(ui->ajouter_commande, &QPushButton::clicked, this, &opticstor::on_ajouter_commande_clicked);
+   /* connect(ui->ajouter_commande, &QPushButton::clicked, this, &opticstor::on_ajouter_commande_clicked);
     connect(ui->supprimer_commande, &QPushButton::clicked, this, &opticstor::on_supprimer_commande_clicked);
     connect(ui->modifier_commande, &QPushButton::clicked, this, &opticstor::on_modifier_commande_clicked);
     connect(ui->rechercher_commande, &QPushButton::clicked, this, &opticstor::on_rechercher_commande_clicked);
     // connect(ui->actualiser_commande, &QPushButton::clicked, this, &opticstor::on_actualiser_commande_clicked);
     // connect(ui->trier_date_commande, &QPushButton::clicked, this, &opticstor::on_trier_date_commande_clicked);
     // connect(ui->trier_prix_commande, &QPushButton::clicked, this, &opticstor::on_trier_prix_commande_clicked);
-
+*/
     // Employés
     connect(ui->ajouter_employe, &QPushButton::clicked, this, &opticstor::on_ajouter_employe_clicked);
     connect(ui->supprimer_employe, &QPushButton::clicked, this, &opticstor::on_supprimer_employe_clicked);
@@ -206,12 +311,12 @@ opticstor::opticstor(QWidget *parent):
 
     // Fonctions existantes
     // connect(ui->submitbut_2, &QPushButton::clicked, this, &opticstor::onSubmitClicked);
-    connect(ui->cancelbut_2, &QPushButton::clicked, this, &opticstor::onCancelClicked);
+   /* connect(ui->cancelbut_2, &QPushButton::clicked, this, &opticstor::onCancelClicked);
     // connect(ui->deletebut_2, &QPushButton::clicked, this, &opticstor::onDeleteClicked);
     connect(ui->submitbutt_2, &QPushButton::clicked, this, &opticstor::onSubmitClickedd);
     connect(ui->cancelbutt_2, &QPushButton::clicked, this, &opticstor::onCancelClickedd);
     connect(ui->deletebutt_2, &QPushButton::clicked, this, &opticstor::onDeleteClickedd);
-    // connect(ui->editbut_3, &QPushButton::clicked, this, &opticstor::onEditClicked);
+    // connect(ui->editbut_3, &QPushButton::clicked, this, &opticstor::onEditClicked);*/
     // connect(ui->sortCombo_2, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &opticstor::onSortChanged);
     // connect(ui->searchbut_2, &QPushButton::clicked, this, &opticstor::onSearchClicked);
     setupTriComboBox();
@@ -231,9 +336,42 @@ opticstor::opticstor(QWidget *parent):
     } else {
         qDebug() << "ERREUR: tableStock non trouvé dans l'interface!";
     }
+    // TENTATIVE DE CONNEXION À ARDUINO
+    qDebug() << "=== DÉBUT CONNEXION ARDUINO ===";
 
+    int connexionResult = A.connect_arduino();
 
+    if (connexionResult == 0) {
+        qDebug() << "✅ Arduino connecté sur port:" << A.getarduino_port_name();
+        qDebug() << "Port ouvert:" << A.getserial()->isOpen();
+        qDebug() << "Baud rate:" << A.getserial()->baudRate();
+
+        // Test immédiat
+        QByteArray test = "QT:Bonjour Arduino!\n";
+        A.write_to_arduino(test);
+        qDebug() << "Message test envoyé";
+
+    } else if (connexionResult == 1) {
+        qDebug() << "❌ Erreur: Port série trouvé mais impossible à ouvrir";
+        qDebug() << "Vérifiez qu'aucun autre programme n'utilise le port (IDE Arduino, Terminal, etc.)";
+
+    } else if (connexionResult == -1) {
+        qDebug() << "⚠ Arduino non détecté";
+        qDebug() << "Ports disponibles:";
+        foreach (const QSerialPortInfo &info, QSerialPortInfo::availablePorts()) {
+            qDebug() << "-" << info.portName()
+            << "Vendor:" << info.vendorIdentifier()
+            << "Product:" << info.productIdentifier()
+            << "Description:" << info.description();
+        }
+    }
+
+    qDebug() << "=== FIN CONNEXION ARDUINO ===";
 }
+
+
+
+
 
 
 
@@ -751,6 +889,7 @@ void opticstor::on_ajouter_clicked()
         ui->age_client->clear();
         ui->statut_client->setCurrentIndex(0); // ← REMETTRE À "saisir"
     } else {
+       // qDebug() << "Erreur SQL:" << c.lastError().text();
         QMessageBox::critical(this, "Erreur", "Erreur lors de l'ajout du client!");
     }
 }
@@ -1353,7 +1492,7 @@ void opticstor::remplirTableEmployes()
 
 // ==================== FONCTIONS POUR REMPLIR LES TABLES ====================
 
-void opticstor::remplirTableCommandes()
+/*void opticstor::remplirTableCommandes()
 {
     ui->tableWidget_2->setRowCount(0);
     QSqlQuery query;
@@ -1372,9 +1511,9 @@ void opticstor::remplirTableCommandes()
     } else {
         qDebug() << "Erreur lors du remplissage des commandes:" << query.lastError().text();
     }
-}
+}*/
 
-void opticstor::remplirTableClients()
+/*void opticstor::remplirTableClients()
 {
     ui->tabcl_2->setRowCount(0);
     QSqlQuery query;
@@ -1389,187 +1528,620 @@ void opticstor::remplirTableClients()
             ui->tabcl_2->setItem(row, 2, new QTableWidgetItem(""));
         }
     }
-}
+}*/
 
 // ==================== GESTION DES COMMANDES ====================
+void opticstor::updatecommande(){
+    QList<QTableWidgetItem*> selected = ui->tablecmd->selectedItems();
+    if (selected.isEmpty()) return;
 
-void opticstor::on_ajouter_commande_clicked()
-{
-    QString idText = ui->id_commande->text();
-    QString idClientText = ui->id_client_commande->text();
-    QString idEmployeText = ui->id_employe_commande->text();
-    QString dateText = ui->date_commande->text();
-    QString prixText = ui->prix_total_commande->text();
+    int selectedRow = selected.first()->row();
+    QTableWidgetItem* idItem = ui->tablecmd->item(selectedRow, 0);
+    if (!idItem) return;
 
-    // Validation des champs
-    if (idText.isEmpty() ||
-        idClientText.isEmpty() || idEmployeText.isEmpty() || dateText.isEmpty() || prixText.isEmpty()) {
-        QMessageBox::warning(this, "Erreur", "Tous les champs doivent être remplis!");
-        return;
+    int actualId = idItem->text().toInt();
+
+    QSqlQuery query;
+    if(ui->idclientc->currentIndex()!=0){
+        query.prepare("UPDATE    COMMANDE SET ID_CLIENT=:client WHERE ID_COMMANDE=:idcmd");
+        query.bindValue(":client",ui->idclientc->currentText());
+        query.bindValue(":idcmd",actualId);
+        query.exec();
     }
-
-    int id = idText.toInt();
-    int idClient = idClientText.toInt();
-    int idEmploye = idEmployeText.toInt();
-    double prix = prixText.toDouble();
-
-    QDate date = QDate::fromString(dateText, "dd-MM-yyyy");
-    if (!date.isValid()) {
-        QMessageBox::warning(this, "Erreur", "Date invalide! Format: JJ-MM-AAAA");
-        return;
+    if(ui->idemployec->currentIndex()!=0){
+        query.prepare("UPDATE COMMANDE SET CIN=:cin WHERE ID_COMMANDE=:idcmd");
+        query.bindValue(":cin",ui->idemployec->currentText());
+        query.bindValue(":idcmd",actualId);
+        query.exec();
     }
+    if(ui->typec->currentIndex()!=0){
+        QSqlQuery tqrt;
+        tqrt.prepare("SELECT CODE_PRODUIT FROM PRODUIT WHERE TYPE = :type AND MARQUE = :marque AND QUANTITE_STOCK > 0 AND CODE_PRODUIT NOT IN (SELECT CODE_PRODUIT FROM CONTIENT)");
+        tqrt.bindValue(":type",ui->typec->currentText());
 
-    Commande cmd(id,  idClient, idEmploye, date, prix);
-    if (cmd.ajouter()) {
-        QMessageBox::information(this, "Succès", "Commande ajoutée avec succès!");
-        remplirTableCommandes();
-
-        // Vider les champs
-        ui->id_commande->clear();
-        ui->id_client_commande->clear();
-        ui->id_employe_commande->clear();
-        ui->date_commande->clear();
-        ui->prix_total_commande->clear();
-    } else {
-        QMessageBox::critical(this, "Erreur", "Erreur lors de l'ajout de la commande!");
+        query.prepare("UPDATE CONTIENT c SET c.CODE_PRODUIT=:cin WHERE c.ID_COMMANDE=:idcmd AND PRODUIT p");
+        query.bindValue(":cin",ui->idemployec->currentText());
+        query.bindValue(":idcmd",actualId);
+        query.exec();
     }
+    ui->commandsc->setCurrentIndex(1);
+
+    affichecommande();
 }
 
-void opticstor::on_supprimer_commande_clicked()
-{
-    QString idText = ui->id_commande_supp->text();
+void opticstor::supprimcommande(){
+    QMessageBox::StandardButton reply;
+    reply = QMessageBox::question(this, "Confirmation",
+                                  "Voulez-vous vraiment supprimer cette commande?",
+                                  QMessageBox::Yes|QMessageBox::No);
+    if (reply != QMessageBox::Yes) return;
+    QList<QTableWidgetItem*> selected = ui->tablecmd->selectedItems();
+    if (selected.isEmpty()) return;
 
-    if (idText.isEmpty()) {
-        QMessageBox::warning(this, "Erreur", "Veuillez entrer un ID de commande!");
-        return;
-    }
+    int selectedRow = selected.first()->row();
+    QTableWidgetItem* idItem = ui->tablecmd->item(selectedRow, 0);
+    if (!idItem) return;
 
-    int id = idText.toInt();
+    int actualId = idItem->text().toInt();
+    QSqlQuery deleteContenir;
+    deleteContenir.prepare("DELETE FROM CONTIENT WHERE ID_COMMANDE=:id");
+    deleteContenir.bindValue(":id", actualId);
+    if(deleteContenir.exec()){
+        QSqlQuery query;
+        query.prepare("DELETE FROM COMMANDE WHERE ID_COMMANDE=:id");
+        query.bindValue(":id", actualId);
 
-    QMessageBox::StandardButton reply = QMessageBox::question(this, "Confirmation",
-                                                              "Voulez-vous vraiment supprimer cette commande?",
-                                                              QMessageBox::Yes | QMessageBox::No);
-
-    if (reply == QMessageBox::Yes) {
-        if (tmpCommande.supprimer(id)) {
-            QMessageBox::information(this, "Succès", "Commande supprimée avec succès!");
-            remplirTableCommandes();
-            ui->id_commande_supp->clear();
+        if(query.exec()){
+            qDebug() << "deleted row";
+            ui->tablecmd->removeRow(selectedRow);
+            affichecommande();
         } else {
-            QMessageBox::critical(this, "Erreur", "Erreur lors de la suppression!");
+            qDebug() << "failed to delete:" << query.lastError().text();
         }
+    }else{
+        qDebug() << "failed to delete from contenir:" << deleteContenir.lastError().text();
     }
 }
 
-void opticstor::on_modifier_commande_clicked()
-{
-    QString idText = ui->id_commande->text();
-    QString idClientText = ui->id_client_commande->text();
-    QString idEmployeText = ui->id_employe_commande->text();
-    QString dateText = ui->date_commande->text();
-    QString prixText = ui->prix_total_commande->text();
+bool opticstor::commandExists(int commandId) {
+    QSqlQuery query;
+    query.prepare("SELECT 1 FROM COMMANDE WHERE ID_COMMANDE = :id");
+    query.bindValue(":id", commandId);
+    return (query.exec() && query.next());
+}
 
-    if (idText.isEmpty()) {
-        QMessageBox::warning(this, "Erreur", "ID commande requis pour la modification!");
+void opticstor::loadtypesmarquesComboBox() {
+
+    QSqlQuery query;
+
+    query.exec("SELECT DISTINCT TYPE FROM PRODUIT ORDER BY TYPE");
+    ui->type->addItem("Choisir type");
+    ui->typec->addItem("Choisir type");
+    while(query.next()) {
+        ui->type->addItem(query.value(0).toString());
+        //ui->typec->addItem(query.value(0).toString());
+    }
+
+    query.exec("SELECT DISTINCT MARQUE FROM PRODUIT ORDER BY MARQUE");
+    ui->marque->addItem("Choisir marque");
+    ui->marquec->addItem("Choisir marque");
+    while(query.next()) {
+        ui->marque->addItem(query.value(0).toString());
+        ui->marque->addItem(query.value(0).toString());
+    }
+
+    ui->typec->setCurrentIndex(0);
+    ui->marquec->setCurrentIndex(0);
+    ui->type->setCurrentIndex(0);
+    ui->marque->setCurrentIndex(0);
+}
+
+void opticstor::loademp(){
+    QSqlQuery query;
+    query.exec("SELECT CIN FROM EMPLOYE");
+    ui->idemploye->addItem("Choisir employe");
+    ui->idemployec->addItem("Choisir employe");
+    while(query.next()){
+        ui->idemploye->addItem(query.value(0).toString());
+        ui->idemployec->addItem(query.value(0).toString());
+    }
+    ui->idemploye->setCurrentIndex(0);
+    ui->idemployec->setCurrentIndex(0);
+}
+
+void opticstor::loadclientComboBox()
+{
+    QSqlQuery query;
+    query.exec("SELECT ID_CLIENT FROM CLIENT");
+    ui->idclient->addItem("Choisir client");
+    ui->idclientc->addItem("Choisir client");
+    while(query.next()){
+        ui->idclient->addItem(query.value(0).toString());
+        ui->idclientc->addItem(query.value(0).toString());
+    }
+    ui->idclient->setCurrentIndex(0);
+    ui->idclientc->setCurrentIndex(0);
+}
+
+void opticstor::autrecmd(){
+    if (ui->IDcommande->text().isEmpty()  || ui->idclient->currentIndex()==-1 || ui->idemploye->currentIndex()==-1 || ui->type->currentIndex()==-1 || ui->marque->currentIndex()==-1) {
+        QMessageBox::warning(this, "Champs manquants", "Veuillez remplir tous les champs!");
+        return;
+    }
+    if(prixtotal==0 && commandExists(ui->IDcommande->text().toInt())){
+        QMessageBox::warning(this, "ID existant", "choisir un ID inexistant!");
         return;
     }
 
-    int id = idText.toInt();
-    int idClient = idClientText.toInt();
-    int idEmploye = idEmployeText.toInt();
-    double prix = prixText.toDouble();
-    QDate date = QDate::fromString(dateText, "yyyy-MM-dd");
+    QSqlQuery query;
+    type=ui->type->currentText();
+    marque=ui->marque->currentText();
+    query.prepare("SELECT CODE_PRODUIT, PRIX FROM PRODUIT WHERE TYPE = :type AND MARQUE = :marque AND QUANTITE_STOCK > 0 AND CODE_PRODUIT NOT IN (SELECT CODE_PRODUIT FROM CONTIENT)");
+    query.bindValue(":type", type);
+    query.bindValue(":marque", marque);
 
-    if (tmpCommande.modifier(id, idClient, idEmploye, date, prix)) {
-        QMessageBox::information(this, "Succès", "Commande modifiée avec succès!");
-        remplirTableCommandes();
+    if (query.exec() && query.next()) {
+        QString id = query.value(0).toString();
+        double price = query.value(1).toDouble();
+        QSqlQuery queryy;
+        if(prixtotal==0){
+            QSqlQuery cmd;
+            cmd.prepare("INSERT INTO COMMANDE(ID_COMMANDE) VALUES(:cmd)");
+            cmd.bindValue(":cmd",ui->IDcommande->text().toInt());
+            if(cmd.exec()){qDebug()<<"success";}
+            else{qDebug()<<"failed";}
+        }
+        queryy.prepare("INSERT INTO CONTIENT(ID_COMMANDE,CODE_PRODUIT) VALUES (:cmd,:id)");
+        queryy.bindValue(":cmd",ui->IDcommande->text().toInt());
+        queryy.bindValue(":id",id);
+        qDebug() << "Available product:" << id << "Price:" << price;
+        if(queryy.exec()){
+            qDebug()<<"inserted";
+            QSqlQuery dquerry;
+            dquerry.prepare("UPDATE PRODUIT SET QUANTITE_STOCK=QUANTITE_STOCK-1 WHERE CODE_PRODUIT=:id");
+            dquerry.bindValue(":id",id);
+            if(dquerry.exec()){qDebug()<<"deleted";}
+            else{qDebug() <<"failed to delete";}
+            ui->cmdlabel->setText(ui->IDcommande->text());
+            ui->clientlabel->setText(ui->idclient->currentText());
+            ui->emplabel->setText(ui->idemploye->currentText());
+            ui->commands->setCurrentIndex(1);
+            prixtotal += price;
+            ui->type->setCurrentIndex(0);
+            ui->marque->setCurrentIndex(0);
+            qDebug() << "Total price:" << prixtotal;
+        }else {
+            qDebug() << "Failed to insert into contenir:" << queryy.lastError().text();
+            qDebug() << "Last query:" << queryy.lastQuery();
+            qDebug() << "Bound values - cmd:" << ui->IDcommande->text().toInt()
+                     << "id:" << id << "price:" << price;
+            QMessageBox::critical(this, "Erreur", "Erreur lors de l'ajout du produit à la commande!");
+        }
 
-        ui->id_commande->clear();
-        ui->id_client_commande->clear();
-        ui->id_employe_commande->clear();
-        ui->date_commande->clear();
-        ui->prix_total_commande->clear();
     } else {
-        QMessageBox::critical(this, "Erreur", "Erreur lors de la modification!");
+        qDebug() << "No available products found";
+        QMessageBox::information(this, "Non disponible",
+                                 "Aucun produit trouvé avec type: " + type +
+                                     " et marque: " + marque);
     }
 }
 
-void opticstor::on_rechercher_commande_clicked()
-{
-    QString idText = ui->id_commande_rech->text();
-
-    if (idText.isEmpty()) {
-        QMessageBox::warning(this, "Erreur", "Veuillez entrer un ID à rechercher!");
+void opticstor::ajoutcommande(){
+    if (ui->IDcommande->text().isEmpty()  || ui->idclient->currentIndex()==-1 || ui->idemploye->currentIndex()==-1 || ui->type->currentIndex()==-1 || ui->marque->currentIndex()==-1) {
+        QMessageBox::warning(this, "Champs manquants", "Veuillez remplir tous les champs!");
         return;
     }
+    if(prixtotal==0 && commandExists(ui->IDcommande->text().toInt())){
+        QMessageBox::warning(this, "ID existant", "choisir un ID inexistant!");
+        return;
+    }
+    type=ui->type->currentText();
+    marque=ui->marque->currentText();
+    QSqlQuery querry;
+    querry.prepare("SELECT CODE_PRODUIT, PRIX FROM PRODUIT WHERE TYPE = :type AND MARQUE = :marque AND QUANTITE_STOCK > 0 AND CODE_PRODUIT NOT IN (SELECT CODE_PRODUIT FROM CONTIENT)");
+    querry.bindValue(":type", type);
+    querry.bindValue(":marque", marque);
+    if (querry.exec() && querry.next()) {
+        QString id = querry.value(0).toString();
+        double price = querry.value(1).toDouble();
+        QDate date = QDate::currentDate();
+        QSqlQuery query,squery;
+        if(prixtotal==0){
+            query.prepare("INSERT INTO COMMANDE (ID_COMMANDE,ID_CLIENT,CIN, DATE_COMMANDE,PRIX_TOTALE) VALUES (:comd,:client,:cin, TO_DATE(:date, 'DD/MM/YYYY'), :prixtot)");
+            query.bindValue(":prixtot",price);
+        }else{
+            query.prepare("UPDATE COMMANDE SET PRIX_TOTALE = :prixtot, CIN=:cin, ID_CLIENT=:client,DATE_COMMANDE=TO_DATE(:date, 'DD/MM/YYYY')  WHERE ID_COMMANDE = :comd");
+            query.bindValue(":prixtot",prixtotal+price);
+        }
+        query.bindValue(":comd", ui->IDcommande->text().toInt());
+        query.bindValue(":client", ui->idclient->currentText());
+        query.bindValue(":cin", ui->idemploye->currentText());
+        query.bindValue(":date",  date.toString("dd/MM/yyyy"));
+        squery.prepare("INSERT INTO CONTIENT (ID_COMMANDE,CODE_PRODUIT) VALUES(:cmd,:cdprod)");
+        squery.bindValue(":cmd",ui->IDcommande->text().toInt());
+        squery.bindValue(":cdprod",id);
+        if (query.exec() && squery.exec()) {
+            qDebug() << "Person saved to database!";
+            qDebug()<<"inserted";
+            QSqlQuery dquerry;
+            dquerry.prepare("UPDATE PRODUIT SET QUANTITE_STOCK=QUANTITE_STOCK-1 WHERE CODE_PRODUIT=:id");
+            dquerry.bindValue(":id",id);
+            if(dquerry.exec()){qDebug()<<"deleted";}
+            else{qDebug() <<"failed to delete";}
+            ui->type->setCurrentIndex(-1);
+            ui->marque->setCurrentIndex(-1);
+            qDebug() << "Total price:" << prixtotal;
 
-    int id = idText.toInt();
-    QSqlQueryModel* model = tmpCommande.rechercherParId(id);
+            ui->IDcommande->clear();
+            ui->idclient->setCurrentIndex(0);
+            ui->idemploye->setCurrentIndex(0);
+            ui->type->setCurrentIndex(0);
+            ui->marque->setCurrentIndex(0);
+            prixtotal=0;
+            ui->commands->setCurrentIndex(0);
+            affichecommande();
+        } else {
+            qDebug() << "Main query error:" << query.lastError().text();
+            qDebug() << "Main query last query:" << query.lastQuery();
+            qDebug() << "Main query bound values:" << query.boundValues();
+            qDebug() << "Contenir query error:" << squery.lastError().text();
+            qDebug() << "Contenir query last query:" << squery.lastQuery();
+            qDebug() << "Contenir query bound values:" << squery.boundValues();
+            qDebug() << "Error:" << query.lastError().text();
+            QMessageBox::critical(this, "Erreur", "Erreur lors de l'ajout du produit à la commande!");
+        }
+    }else {
+        qDebug() << "No available products found";
+        QMessageBox::information(this, "Non disponible",
+                                 "Aucun produit trouvé avec type: " + type +
+                                     " et marque: " + marque);
+    }
+}
 
-    if (model->rowCount() > 0) {
-        // Pour QTableWidget, on doit remplir manuellement
-        ui->tableWidget_2->setRowCount(0);
-        for (int row = 0; row < model->rowCount(); ++row) {
-            int newRow = ui->tableWidget_2->rowCount();
-            ui->tableWidget_2->insertRow(newRow);
+void opticstor::affichecommande(){
+    ui->tablecmd->setEditTriggers(QAbstractItemView::NoEditTriggers);
 
-            for (int col = 0; col < model->columnCount(); ++col) {
-                ui->tableWidget_2->setItem(newRow, col,
-                                           new QTableWidgetItem(model->data(model->index(row, col)).toString()));
+    if(rech==0){
+        QString orderBy = ui->orderbox->currentText();
+        QString sql = "SELECT * FROM COMMANDE ORDER BY " + orderBy;
+        QSqlQuery query(sql);  // Direct execution
+        ui->tablecmd->setRowCount(0);
+        QStringList headers;
+        headers << "ID Commande" << "ID Client" << "CIN" << "Date" << "Prix Total";
+        ui->tablecmd->setColumnCount(headers.size());
+        ui->tablecmd->setHorizontalHeaderLabels(headers);
+
+        int row = 0;
+        while (query.next()) {
+            ui->tablecmd->insertRow(row);
+            for (int col = 0; col < headers.size(); col++) {
+                QTableWidgetItem *item = new QTableWidgetItem(query.value(col).toString());
+                ui->tablecmd->setItem(row, col, item);
             }
+            row++;
         }
-        QMessageBox::information(this, "Succès", "Commande trouvée!");
+    }
+    else{
+        QSqlQuery query;
+        query.prepare("SELECT * FROM COMMANDE WHERE ID_CLIENT=:client");
+        query.bindValue(":client",ui->search->text());
+        ui->tablecmd->insertRow(0);
+        QTableWidgetItem *item = new QTableWidgetItem(query.value(0).toString());
+        ui->tablecmd->setItem(0,0, item);
+
+
+    }
+    if (ui->tablecmd->rowCount() == 0) {
+        int tableWidth = ui->tablecmd->width();
+        int columnWidth = tableWidth / 5;
+        for (int i = 0; i < 5; ++i) {
+            ui->tablecmd->setColumnWidth(i, columnWidth);
+        }
+    }
+    else{ui->tablecmd->resizeColumnsToContents();}
+    ui->tablecmd->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    //qDebug() << "Success! Loaded" << pow << "rows";
+}
+void opticstor::rechcomd(){
+    if(ui->search->text().isEmpty()){
+        QMessageBox::warning(this,"recherche bar vide","choisir un client ID pour rechercher");
+        return;
+    }
+    rech=1;
+
+}
+void opticstor::on_showChartButton_clicked() {
+    // Step 1: Query sold glasses counts
+    QSqlQuery query;
+    int vueCount = 0;
+    int solaireCount = 0;
+
+    if(!query.exec("SELECT p.TYPE, COUNT(*) FROM CONTIENT c "
+                    "JOIN PRODUIT p ON c.CODE_PRODUIT = p.CODE_PRODUIT "
+                    "GROUP BY p.TYPE")) {
+        qDebug() << "Query failed:" << query.lastError().text();
+        return;
+    }
+
+    while(query.next()) {
+        QString type = query.value(0).toString();
+        int count = query.value(1).toInt();
+        if(type == "vue") vueCount = count;
+        else if(type == "solaire") solaireCount = count;
+    }
+
+    // Step 2: Create pie chart WITHOUT QtCharts:: prefix
+    QPieSeries *series = new QPieSeries();
+    series->append("Vue", vueCount);
+    series->append("Solaire", solaireCount);
+
+    // Optional: highlight the first slice
+    series->slices().at(0)->setExploded();
+    series->slices().at(0)->setLabelVisible();
+    series->slices().at(1)->setLabelVisible();
+
+    QChart *chart = new QChart();
+    chart->addSeries(series);
+    chart->setTitle("Répartition des verres vendus");
+    chart->legend()->setAlignment(Qt::AlignRight);
+
+    QChartView *chartView = new QChartView(chart);
+    chartView->setRenderHint(QPainter::Antialiasing);
+
+    // Step 3: Show chart in a modal dialog
+    QDialog dialog(this);
+    QVBoxLayout layout(&dialog);
+    layout.addWidget(chartView);
+    dialog.setLayout(&layout);
+    dialog.setWindowTitle("Statistiques de ventes");
+    dialog.resize(500, 400);
+    dialog.exec();
+}
+
+void opticstor::createPDFReceipt(const QString &pdfPath,
+                                 const QString &customerName,
+                                 const QVector<QPair<QString,double>> &productList,
+                                 double totalPrice)
+{
+
+    //QString pdfPath = QDir::currentPath() + "/receipt_" + commandeId + ".pdf"; // PDF location
+
+    QPdfWriter pdf(pdfPath);
+    pdf.setPageSize(QPageSize(QPageSize::A4));
+    pdf.setPageMargins(QMarginsF(15, 15, 15, 15));
+
+    QPainter painter(&pdf);
+
+    int y = 100;            // starting vertical position
+    int lineHeight = 500;   // spacing between lines
+
+    painter.setFont(QFont("Arial", 12));
+
+    // --- HEADER ---
+    painter.drawText(50, y, "Optic Store");
+    y += lineHeight;
+    painter.drawText(50, y, "Receipt / Facture");
+    y += lineHeight;
+
+    painter.drawLine(50, y, 550, y);
+    y += lineHeight;
+
+    // --- INFO ---
+    painter.drawText(50, y, "Commande ID: " + QFileInfo(pdfPath).baseName()); // use filename as ID
+    y += lineHeight;
+    painter.drawText(50, y, "Client: " + customerName);
+    y += lineHeight;
+    painter.drawText(50, y, "Date: " + QDate::currentDate().toString("dd/MM/yyyy"));
+    y += lineHeight;
+
+    painter.drawLine(50, y, 550, y);
+    y += lineHeight;
+
+    // --- PRODUCTS ---
+    painter.drawText(50, y, "Produit");
+    painter.drawText(4000, y, "Prix");
+    y += lineHeight;
+
+    painter.drawLine(50, y, 550, y);
+    y += lineHeight;
+
+    for (auto &item : productList) {
+        painter.drawText(50, y, item.first); // product name
+        painter.drawText(4000, y, QString::number(item.second, 'f', 2) + " TND"); // price
+        y += lineHeight;
+    }
+
+    painter.drawLine(50, y, 550, y);
+    y += lineHeight;
+
+    // --- TOTAL ---
+    painter.setFont(QFont("Arial", 14, QFont::Bold));
+    painter.drawText(50, y, "Total: " + QString::number(totalPrice, 'f', 2) + " TND");
+
+    painter.end();
+}
+
+void opticstor::generatePDFForCommande(const QString &commandeId)
+{
+    QString customerName;
+    QVector<QPair<QString,double>> items;
+    double totalPrice = 0.0;
+
+    // Get customer name
+    QSqlQuery query;
+    query.prepare("SELECT NOM FROM CLIENT WHERE ID_CLIENT = "
+                  "(SELECT ID_CLIENT FROM COMMANDE WHERE ID_COMMANDE = :clmd)");
+    query.bindValue(":clmd", commandeId);
+
+    if(query.exec() && query.next()) {
+        customerName = query.value(0).toString();
     } else {
-        QMessageBox::information(this, "Recherche", "Aucune commande trouvée!");
-        remplirTableCommandes();
+        customerName = "Unknown";
     }
 
-    delete model;
-}
+    // Get products for this commande
+    QSqlQuery prodQuery;
+    prodQuery.prepare("SELECT p.CODE_PRODUIT, p.PRIX FROM CONTIENT c "
+                      "JOIN PRODUIT p ON c.CODE_PRODUIT = p.CODE_PRODUIT "
+                      "WHERE c.ID_COMMANDE = :clmd");
+    prodQuery.bindValue(":clmd", commandeId);
 
-void opticstor::on_actualiser_commande_clicked()
-{
-    remplirTableCommandes();
-    QMessageBox::information(this, "Succès", "Liste actualisée!");
-}
-
-void opticstor::on_trier_date_commande_clicked()
-{
-    QSqlQueryModel* model = tmpCommande.trierParDate();
-    ui->tableWidget_2->setRowCount(0);
-
-    for (int row = 0; row < model->rowCount(); ++row) {
-        int newRow = ui->tableWidget_2->rowCount();
-        ui->tableWidget_2->insertRow(newRow);
-
-        for (int col = 0; col < model->columnCount(); ++col) {
-            ui->tableWidget_2->setItem(newRow, col,
-                                       new QTableWidgetItem(model->data(model->index(row, col)).toString()));
+    if(prodQuery.exec()) {
+        while(prodQuery.next()) {
+            QString productName = prodQuery.value(0).toString();
+            double price = prodQuery.value(1).toDouble();
+            items.push_back({productName, price});
+            totalPrice += price;
         }
     }
 
-    delete model;
-    QMessageBox::information(this, "Succès", "Commandes triées par date!");
+    QString pdfFileName = QString("receipt_%1_%2.pdf")
+                              .arg(commandeId)
+                              .arg(QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss"));
+
+    createPDFReceipt(pdfFileName, customerName, items, totalPrice);
 }
 
-void opticstor::on_trier_prix_commande_clicked()
+/*void opticstor::on_generatePDFButton_clicked()
 {
-    QSqlQueryModel* model = tmpCommande.trierParPrix();
-    ui->tableWidget_2->setRowCount(0);
+    QString commandeId = ui->IDcommande->text();
+    QString customerName;
+    QVector<QPair<QString,double>> items;
+    double totalPrice = 0.0;
 
-    for (int row = 0; row < model->rowCount(); ++row) {
-        int newRow = ui->tableWidget_2->rowCount();
-        ui->tableWidget_2->insertRow(newRow);
-
-        for (int col = 0; col < model->columnCount(); ++col) {
-            ui->tableWidget_2->setItem(newRow, col,
-                                       new QTableWidgetItem(model->data(model->index(row, col)).toString()));
-        }
+    // --- Get customer name ---
+    QSqlQuery query;
+    query.prepare("SELECT NOM FROM CLIENT WHERE ID_CLIENT = "
+                  "(SELECT ID_CLIENT FROM COMMANDE WHERE ID_COMMANDE = :clmd)");
+    query.bindValue(":clmd", commandeId);
+    if(query.exec() && query.next()) {
+        customerName = query.value(0).toString();
+    } else {
+        qDebug() << "Failed to get customer name:" << query.lastError().text();
+        customerName = "Unknown";
     }
 
-    delete model;
-    QMessageBox::information(this, "Succès", "Commandes triées par prix!");
+    // --- Get products and prices for this command ---
+    QSqlQuery prodQuery;
+    prodQuery.prepare("SELECT p.NOM, p.PRIX FROM CONTIENT c "
+                      "JOIN PRODUIT p ON c.CODE_PRODUIT = p.CODE_PRODUIT "
+                      "WHERE c.ID_COMMANDE = :clmd");
+    prodQuery.bindValue(":clmd", commandeId);
+
+    if(prodQuery.exec()) {
+        while(prodQuery.next()) {
+            QString productName = prodQuery.value(0).toString();
+            double price = prodQuery.value(1).toDouble();
+            items.push_back({productName, price});
+            totalPrice += price;
+        }
+    } else {
+        qDebug() << "Failed to get products:" << prodQuery.lastError().text();
+    }
+    QString pdfFileName = QString("receipt_%1_%2.pdf")
+                              .arg(commandeId)
+                              .arg(QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss"));
+    QString pdfPath = QDir::homePath() + "/Documents/" + pdfFileName;
+    // --- Create PDF with dynamic data ---
+    createPDFReceipt(commandeId, customerName, items, totalPrice);
+    QMessageBox::information(this, "PDF Generated",  "PDF saved as: " + pdfFileName);
+}*/
+void opticstor::on_generatePDFButton_clicked()
+{
+    qDebug() << "PDF button clicked! Function is executing...";
+
+    QString commandeId = ui->IDcommande->text().trimmed();
+
+    // Check if commandeId is empty
+    if(commandeId.isEmpty()) {
+        QMessageBox::warning(this, "Error", "Please enter a commande ID");
+        return;
+    }
+
+    QString customerName;
+    QVector<QPair<QString,double>> items;
+    double totalPrice = 0.0;
+
+    // --- Get customer name ---
+    QSqlQuery query;
+    query.prepare("SELECT NOM FROM CLIENT WHERE ID_CLIENT = "
+                  "(SELECT ID_CLIENT FROM COMMANDE WHERE ID_COMMANDE = :clmd)");
+    query.bindValue(":clmd", commandeId);
+    if(query.exec() && query.next()) {
+        customerName = query.value(0).toString();
+    } else {
+        qDebug() << "Failed to get customer name:" << query.lastError().text();
+        QMessageBox::warning(this, "Error", "No commande found with ID: " + commandeId);
+        return;
+    }
+
+    // --- Get products and prices for this command ---
+    QSqlQuery prodQuery;
+    prodQuery.prepare("SELECT p.CODE_PRODUIT, p.PRIX FROM CONTIENT c "  // ← FIXED: p.CODE_PRODUIT instead of p.NOM
+                      "JOIN PRODUIT p ON c.CODE_PRODUIT = p.CODE_PRODUIT "
+                      "WHERE c.ID_COMMANDE = :clmd");
+    prodQuery.bindValue(":clmd", commandeId);
+
+    if(prodQuery.exec()) {
+        while(prodQuery.next()) {
+            QString productName = prodQuery.value(0).toString();
+            double price = prodQuery.value(1).toDouble();
+            items.push_back({productName, price});
+            totalPrice += price;
+        }
+    } else {
+        qDebug() << "Failed to get products:" << prodQuery.lastError().text();
+        QMessageBox::warning(this, "Error", "Failed to retrieve products");
+        return;
+    }
+
+    // Check if we have any products
+    if(items.isEmpty()) {
+        QMessageBox::warning(this, "Error", "No products found for this commande");
+        return;
+    }
+
+    QString pdfFileName = QString("receipt_%1_%2.pdf")
+                              .arg(commandeId)
+                              .arg(QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss"));
+
+    // Create Documents directory if it doesn't exist
+    QString documentsDir = QDir::homePath() + "/Documents/";
+    QDir dir;
+    if (!dir.exists(documentsDir)) {
+        dir.mkpath(documentsDir);
+    }
+
+    QString pdfPath = documentsDir + pdfFileName;
+
+    qDebug() << "Attempting to create PDF at:" << pdfPath;
+
+    // --- Create PDF with dynamic data ---
+    createPDFReceipt(pdfPath, customerName, items, totalPrice);  // ← FIXED: pass pdfPath instead of commandeId
+
+    // Check if PDF was actually created
+    if(QFile::exists(pdfPath)) {
+        QMessageBox::information(this, "Success", "PDF saved as: " + pdfFileName + "\nLocation: " + documentsDir);
+        qDebug() << "PDF successfully created at:" << pdfPath;
+    } else {
+        QMessageBox::critical(this, "Error", "Failed to create PDF file!");
+        qDebug() << "PDF file was not created!";
+    }
 }
+void opticstor::on_commandSelected(int row, int column)
+{
+    Q_UNUSED(column);
+
+    // Assuming the first column (0) is the Commande ID
+    QString commandeId = ui->tablecmd->item(row, 0)->text(); // assuming column 0 holds the ID
+
+    generatePDFForCommande(commandeId);
+}
+
+void opticstor::updmen(){
+    ui->commandsc->setCurrentIndex(0);
+}
+
 
 // ==================== GESTION DES FOURNISSEURS ====================
 
@@ -1585,12 +2157,25 @@ void opticstor::on_ajouter_fournisseur_clicked()
         return;
     }
 
-    int id = idText.isEmpty() ? 0 : idText.toInt();
-    Fournisseur f(id, nom_entreprise, telephone, email);
+    // Utiliser le nom_entreprise comme nom et laisser prénom vide, type par défaut "Local"
+    // Si l'utilisateur a saisi un ID, l'utiliser pour construire le fournisseur
+    Fournisseur f;
+    if (!idText.isEmpty()) {
+        bool ok = false;
+        int id = idText.toInt(&ok);
+        if (ok && id > 0) {
+            f = Fournisseur(id, nom_entreprise, "", telephone, email, "Local");
+        } else {
+            QMessageBox::warning(this, "Erreur", "ID fournisseur invalide!");
+            return;
+        }
+    } else {
+        f = Fournisseur(nom_entreprise, "", telephone, email, "Local");
+    }
 
     if (f.ajouter()) {
         QMessageBox::information(this, "Succès", "Fournisseur ajouté avec succès!");
-        ui->table_fournisseurs->setModel(tmpFournisseur.afficher());
+        ui->tableWidget_22->setModel(tmpFournisseur.afficher());
 
         ui->id_fournisseur->clear();
         ui->nom_entreprise->clear();
@@ -1619,7 +2204,7 @@ void opticstor::on_supprimer_fournisseur_clicked()
     if (reply == QMessageBox::Yes) {
         if (tmpFournisseur.supprimer(id)) {
             QMessageBox::information(this, "Succès", "Fournisseur supprimé avec succès!");
-            ui->table_fournisseurs->setModel(tmpFournisseur.afficher());
+            ui->tableWidget_22->setModel(tmpFournisseur.afficher());
             ui->id_fournisseur_supp->clear();
         } else {
             QMessageBox::critical(this, "Erreur", "Erreur lors de la suppression!");
@@ -1640,11 +2225,17 @@ void opticstor::on_modifier_fournisseur_clicked()
     }
 
     int id = idText.toInt();
-    Fournisseur f(id, nom_entreprise, telephone, email);
+    
+    // Set the values in tmpFournisseur and call modifier
+    tmpFournisseur.setNom(nom_entreprise);
+    tmpFournisseur.setPrenom("");
+    tmpFournisseur.setTelephone(telephone);
+    tmpFournisseur.setEmail(email);
+    tmpFournisseur.setType("Local");
 
-    if (f.modifier(id)) {
+    if (tmpFournisseur.modifier(id)) {
         QMessageBox::information(this, "Succès", "Fournisseur modifié avec succès!");
-        ui->table_fournisseurs->setModel(tmpFournisseur.afficher());
+        ui->tableWidget_22->setModel(tmpFournisseur.afficher());
 
         ui->id_fournisseur->clear();
         ui->nom_entreprise->clear();
@@ -1657,8 +2248,8 @@ void opticstor::on_modifier_fournisseur_clicked()
 
 void opticstor::on_rechercher_fournisseur_clicked()
 {
-    QString mot_cle = ui->recherche_fournisseur->text();
-    QString colonne = ui->combo_recherche_fournisseur->currentText();
+    QString mot_cle = ui->recherchelabel->text();
+    QString colonne = "NOM";  // Default search column
 
     if (mot_cle.isEmpty()) {
         QMessageBox::warning(this, "Erreur", "Veuillez entrer un terme de recherche!");
@@ -1666,7 +2257,7 @@ void opticstor::on_rechercher_fournisseur_clicked()
     }
 
     QSqlQueryModel* model = tmpFournisseur.rechercher(mot_cle, colonne);
-    ui->table_fournisseurs->setModel(model);
+    ui->tableWidget_22->setModel(model);
 
     if (model->rowCount() == 0) {
         QMessageBox::information(this, "Recherche", "Aucun résultat trouvé!");
@@ -1675,7 +2266,7 @@ void opticstor::on_rechercher_fournisseur_clicked()
 
 void opticstor::on_actualiser_fournisseur_clicked()
 {
-    ui->table_fournisseurs->setModel(tmpFournisseur.afficher());
+    ui->tableWidget_22->setModel(tmpFournisseur.afficher());
     QMessageBox::information(this, "Succès", "Liste actualisée!");
 }
 
@@ -2183,7 +2774,8 @@ QString opticstor::determinerSexe(const QString& marque)
 }
 
 // FONCTION PLEINE POUR AFFICHER LE STOCK
-void opticstor::afficherStockSelonStatut(const QString& statut)
+// FONCTION PLEINE POUR AFFICHER LE STOCK
+    void opticstor::afficherStockSelonStatut(const QString& statut)
 {
     qDebug() << "=== STATUT REÇU:" << statut << "===";
 
@@ -2198,16 +2790,17 @@ void opticstor::afficherStockSelonStatut(const QString& statut)
 
     QSqlQuery query;
     QString requete;
+    int count = 0;
 
     // TES NOUVELLES RÈGLES:
     if (statut == "RUPTURE") {
-        requete = "SELECT CODE_PRODUIT, MARQUE, TYPE, QUANTITE_STOCK, PRIX FROM PRODUIT WHERE QUANTITE_STOCK < 3"; // 0,1,2
+        requete = "SELECT CODE_PRODUIT, MARQUE, TYPE, QUANTITE_STOCK, PRIX FROM PRODUIT WHERE QUANTITE_STOCK < 3";
     }
     else if (statut == "FAIBLE") {
-        requete = "SELECT CODE_PRODUIT, MARQUE, TYPE, QUANTITE_STOCK, PRIX FROM PRODUIT WHERE QUANTITE_STOCK BETWEEN 3 AND 10"; // 3-10
+        requete = "SELECT CODE_PRODUIT, MARQUE, TYPE, QUANTITE_STOCK, PRIX FROM PRODUIT WHERE QUANTITE_STOCK BETWEEN 3 AND 10";
     }
     else if (statut == "NORMAL") {
-        requete = "SELECT CODE_PRODUIT, MARQUE, TYPE, QUANTITE_STOCK, PRIX FROM PRODUIT WHERE QUANTITE_STOCK > 10"; // 11+
+        requete = "SELECT CODE_PRODUIT, MARQUE, TYPE, QUANTITE_STOCK, PRIX FROM PRODUIT WHERE QUANTITE_STOCK > 10";
     }
     else if (statut == "TOUS") {
         requete = "SELECT CODE_PRODUIT, MARQUE, TYPE, QUANTITE_STOCK, PRIX FROM PRODUIT";
@@ -2262,16 +2855,64 @@ void opticstor::afficherStockSelonStatut(const QString& statut)
             }
 
             row++;
+            count++;
         }
 
         qDebug() << row << "lignes ajoutées pour statut:" << statut;
         tableStock->resizeColumnsToContents();
 
+        // Envoyer le message à l'Arduino pour l'écran LCD
+        envoyerMessageArduino(statut, count);
+
     } else {
         qDebug() << "Erreur requête:" << query.lastError().text();
     }
 }
-// TES 4 BOUTONS - FONCTIONS COMPLÈTES
+
+// Fonction pour envoyer un message à l'Arduino avec les données RÉELLES de la base
+void opticstor::envoyerMessageArduino(const QString& statut, int nombreProduits)
+{
+    // Vérifier si l'Arduino est connecté
+    if (!A.getserial() || !A.getserial()->isOpen()) {
+        qDebug() << "Arduino non connecté!";
+        return;
+    }
+
+    // DEBUG CONFIRMATION
+    qDebug() << "=== CONFIRMATION DONNÉES BASE ===";
+    qDebug() << "Statut:" << statut;
+    qDebug() << "Nombre produits (de la base):" << nombreProduits;
+    qDebug() << "Source: Requête SQL exécutée avec succès";
+
+    QString message;
+
+    if (statut == "RUPTURE") {
+        message = "RUPTURE: " + QString::number(nombreProduits);
+        qDebug() << "Message formé: RUPTURE: " << nombreProduits << "produits";
+    }
+    else if (statut == "FAIBLE") {
+        message = "FAIBLE: " + QString::number(nombreProduits);
+        qDebug() << "Message formé: FAIBLE: " << nombreProduits << "produits";
+    }
+    else if (statut == "NORMAL") {
+        message = "NORMAL: " + QString::number(nombreProduits);
+        qDebug() << "Message formé: NORMAL: " << nombreProduits << "produits";
+    }
+    else if (statut == "TOUS") {
+        message = "TOTAL: " + QString::number(nombreProduits);
+        qDebug() << "Message formé: TOTAL: " << nombreProduits << "produits";
+    }
+
+    // AJOUTER UN SAUT DE LIGNE À LA FIN
+    message += "\n";
+
+    // Envoie avec TA méthode write_to_arduino
+    A.write_to_arduino(message.toUtf8());
+
+    qDebug() << "✅ Message envoyé à Arduino avec données RÉELLES de la base";
+    qDebug() << "📊 Données: " << message.trimmed();
+}
+
 void opticstor::on_btnRupture_clicked()
 {
     afficherStockSelonStatut("RUPTURE");
@@ -2291,6 +2932,7 @@ void opticstor::on_btnTous_clicked()
 {
     afficherStockSelonStatut("TOUS");
 }
+
 void opticstor::on_statistique_stock_clicked()
 {
     // Créer une nouvelle fenêtre pour les statistiques de stock
@@ -2430,142 +3072,6 @@ void opticstor::on_statistique_stock_clicked()
 
 
 // ==================== FONCTIONS EXISTANTES ====================
-
-void opticstor::onSubmitClicked()
-{
-    int cmdId = ui->id_commande->text().toInt();
-    int prix = ui->prix_total_commande->text().toInt();
-    QString text2 = ui->id_client_commande->text();
-    QString text3 = ui->id_employe_commande->text();
-    QString text4 = ui->date_commande->text();
-
-    int newRow = ui->tableWidget_2->rowCount();
-    ui->tableWidget_2->insertRow(newRow);
-
-    ui->tableWidget_2->setItem(newRow, 1, new QTableWidgetItem(text2));
-    ui->tableWidget_2->setItem(newRow, 2, new QTableWidgetItem(text3));
-    ui->tableWidget_2->setItem(newRow, 3, new QTableWidgetItem(text4));
-    ui->tableWidget_2->setItem(newRow, 0, new QTableWidgetItem(QString::number(cmdId)));
-    ui->tableWidget_2->item(newRow, 0)->setData(Qt::EditRole, cmdId);
-
-    ui->tableWidget_2->setItem(newRow, 4, new QTableWidgetItem(QString::number(prix)));
-    ui->tableWidget_2->item(newRow, 4)->setData(Qt::EditRole, prix);
-
-    ui->id_commande->clear();
-    ui->id_client_commande->clear();
-    ui->id_employe_commande->clear();
-    ui->date_commande->clear();
-    ui->prix_total_commande->clear();
-}
-
-void opticstor::onSubmitClickedd()
-{
-    int cmdId = ui->cdprod_2->text().toInt();
-    QString text2 = ui->idcll_2->text();
-    QString text3 = ui->email_2->text();
-
-    int newRow = ui->tabcl_2->rowCount();
-    ui->tabcl_2->insertRow(newRow);
-
-    ui->tabcl_2->setItem(newRow, 0, new QTableWidgetItem(text2));
-    ui->tabcl_2->setItem(newRow, 1, new QTableWidgetItem(text3));
-    ui->tabcl_2->setItem(newRow, 2, new QTableWidgetItem(QString::number(cmdId)));
-    ui->tabcl_2->item(newRow, 2)->setData(Qt::EditRole, cmdId);
-
-    ui->idcll_2->clear();
-    ui->email_2->clear();
-    ui->cdprod_2->clear();
-}
-
-void opticstor::onCancelClickedd() {
-    ui->idcll_2->clear();
-    ui->email_2->clear();
-    ui->cdprod_2->clear();
-}
-
-void opticstor::onCancelClicked() {
-    ui->id_commande->clear();
-    ui->id_client_commande->clear();
-    ui->id_employe_commande->clear();
-    ui->date_commande->clear();
-    ui->prix_total_commande->clear();
-}
-
-void opticstor::onDeleteClicked()
-{
-    QModelIndexList selected = ui->tableWidget_2->selectionModel()->selectedRows();
-    if (selected.isEmpty()) {
-        QMessageBox::warning(this, "Delete", "Please select a row to delete.");
-        return;
-    }
-
-    QMessageBox::StandardButton reply;
-    reply = QMessageBox::question(this, "Confirm Delete",
-                                  "Are you sure you want to delete the selected row?",
-                                  QMessageBox::Yes | QMessageBox::No);
-
-    if (reply == QMessageBox::Yes) {
-        int row = selected.first().row();
-        ui->tableWidget_2->removeRow(row);
-    }
-}
-
-void opticstor::onDeleteClickedd()
-{
-    QModelIndexList selected = ui->tabcl_2->selectionModel()->selectedRows();
-    if (selected.isEmpty()) {
-        QMessageBox::warning(this, "Delete", "Please select a row to delete.");
-        return;
-    }
-
-    QMessageBox::StandardButton reply;
-    reply = QMessageBox::question(this, "Confirm Delete",
-                                  "Are you sure you want to delete the selected row?",
-                                  QMessageBox::Yes | QMessageBox::No);
-
-    if (reply == QMessageBox::Yes) {
-        int row = selected.first().row();
-        ui->tabcl_2->removeRow(row);
-    }
-}
-
-void opticstor::onSearchClicked()
-{
-    QString text = ui->id_commande_rech->text();
-    if (text.isEmpty())
-        return;
-
-    for (int row = 0; row < ui->tableWidget_2->rowCount(); ++row) {
-        for (int col = 0; col < ui->tableWidget_2->columnCount(); ++col) {
-            QTableWidgetItem *item = ui->tableWidget_2->item(row, col);
-            if (item && item->text().contains(text, Qt::CaseInsensitive)) {
-                ui->tableWidget_2->setCurrentCell(row, col);
-                return;
-            }
-        }
-    }
-
-    QMessageBox::information(this, "Not found", "No matching result in the table.");
-}
-
-void opticstor::onEditClicked()
-{
-    ui->tableWidget_2->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::SelectedClicked);
-    QModelIndex currentIndex = ui->tableWidget_2->currentIndex();
-    if (currentIndex.isValid()) {
-        ui->tableWidget_2->edit(currentIndex);
-    }
-}
-
-void opticstor::onEditClickedd()
-{
-    ui->tabcl_2->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::SelectedClicked);
-    QModelIndex currentIndex = ui->tabcl_2->currentIndex();
-    if (currentIndex.isValid()) {
-        ui->tabcl_2->edit(currentIndex);
-    }
-}
-
 void opticstor::onGestCommande(){
     ui->opticstack->setCurrentIndex(1);
 }
@@ -2574,11 +3080,11 @@ void opticstor::onGest(){
     ui->opticstack->setCurrentIndex(2);
 }
 
-void opticstor::onSortChanged(int index)
+/*void opticstor::onSortChanged(int index)
 {
     ui->tabcl_2->sortItems(index, Qt::AscendingOrder);
 }
-
+*/
 void opticstor:: onprod(){
     ui->opticstack->setCurrentIndex(3);
 }
@@ -2589,6 +3095,262 @@ void opticstor::onemp(){
 
 void opticstor::onfourn(){
     ui->opticstack->setCurrentIndex(0);
+}
+
+// ==================== RAVITAILLEMENT / FEEDBACK / STATISTIQUES FOURNISSEURS ====================
+
+void opticstor::on_ajoutravitalement_clicked()
+{
+    // Open the Ravitaillement dialog so user can fill all ravitaillement data in a single place
+    RavitaillementDialog dlg(this);
+    connect(&dlg, &RavitaillementDialog::ravitaillementAdded, this, [&](){
+        // Refresh related views after an add
+        ui->table_produits->setModel(tmpProduit.afficher());
+        chargerRavitaillementTable();
+    });
+    dlg.exec();
+}
+
+void opticstor::on_feedback_clicked()
+{
+    FeedbackDialog dlg(this);
+    dlg.exec();
+}
+
+void opticstor::on_triparnom_clicked()
+{
+    // Use the Fournisseur model ordering instead of relying on the view
+    QSqlQueryModel* model = tmpFournisseur.afficherTrie("NOM_ENTREPRISE ASC");
+    if (model && model->rowCount() >= 0) {
+        ui->tableWidget_22->setModel(model);
+        QMessageBox::information(this, tr("✅ Tri effectué"), tr("Fournisseurs triés par nom!"));
+    } else {
+        QMessageBox::warning(this, tr("Erreur"), tr("Impossible de trier les fournisseurs"));
+    }
+}
+
+
+void opticstor::on_exportexel_clicked()
+{
+    QString path = QFileDialog::getSaveFileName(this, tr("Exporter CSV"), QString(), tr("CSV files (*.csv);;All Files (*)"));
+    if (path.isEmpty()) return;
+
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::critical(this, tr("Erreur"), tr("Impossible d'ouvrir le fichier en écriture"));
+        return;
+    }
+
+    QTextStream out(&file);
+
+    // Get model from tableWidget_22
+    QAbstractItemModel* model = ui->tableWidget_22->model();
+    if (!model) {
+        QMessageBox::warning(this, tr("Erreur"), tr("Aucune donnée à exporter"));
+        file.close();
+        return;
+    }
+
+    // header
+    QStringList headers;
+    for (int c = 0; c < model->columnCount(); ++c) {
+        headers << model->headerData(c, Qt::Horizontal).toString();
+    }
+    out << headers.join(',') << '\n';
+
+    for (int r = 0; r < model->rowCount(); ++r) {
+        QStringList row;
+        for (int c = 0; c < model->columnCount(); ++c) {
+            QString data = model->data(model->index(r, c)).toString();
+            row << data.replace(',', ';');
+        }
+        out << row.join(',') << '\n';
+    }
+
+    file.close();
+    QMessageBox::information(this, tr("Exporté"), tr("CSV exporté avec succès à:\n%1").arg(path));
+}
+
+void opticstor::on_stat_fournisseur_clicked()
+{
+    // Ask whether to show stats per supplier or grouped by type
+    QMessageBox msg(this);
+    msg.setWindowTitle(tr("Choisir type de statistique"));
+    msg.setText(tr("Afficher les statistiques par :"));
+    msg.addButton(tr("Fournisseur"), QMessageBox::AcceptRole);
+    QPushButton *byT = msg.addButton(tr("Type de fournisseur"), QMessageBox::AcceptRole);
+    QPushButton *cancel = msg.addButton(QMessageBox::Cancel);
+    msg.exec();
+
+    if (msg.clickedButton() == cancel) return;
+
+    if (msg.clickedButton() == byT) {
+        // Show stats aggregated by type
+        QSqlQueryModel* byType = tmpMetier.statsParType();
+        if (!byType || byType->rowCount() == 0) {
+            QMessageBox::information(this, tr("Statistiques"), tr("Aucune statistique de type trouvée."));
+            return;
+        }
+
+        QString out;
+        for (int r = 0; r < byType->rowCount(); ++r) {
+            QString type = byType->data(byType->index(r,0)).toString();
+            QString nb = byType->data(byType->index(r,1)).toString();
+            QString totalQ = byType->data(byType->index(r,2)).toString();
+            QString avg = byType->data(byType->index(r,3)).toString();
+            out += QString("Type: %1  -  #Rav: %2  -  TotalQté: %3  -  NoteAvg: %4\n").arg(type, nb, totalQ, avg);
+        }
+        QMessageBox::information(this, tr("Statistiques par type"), out);
+        return;
+    }
+
+    // default: by fournisseur
+    QSqlQueryModel* all = tmpMetier.statsFournisseur(-1);
+    if (!all || all->rowCount() == 0) {
+        QMessageBox::information(this, "Statistiques", "Aucune statistique trouvée.");
+        return;
+    }
+
+    QString out;
+    for (int r = 0; r < all->rowCount(); ++r) {
+        QString id = all->data(all->index(r,0)).toString();
+        QString nb = all->data(all->index(r,1)).toString();
+        QString totalQ = all->data(all->index(r,2)).toString();
+        QString avg = all->data(all->index(r,3)).toString();
+        out += QString("ID: %1  -  #Rav: %2  -  TotalQté: %3  -  NoteAvg: %4\n").arg(id, nb, totalQ, avg);
+    }
+    QMessageBox::information(this, "Statistiques fournisseurs", out);
+}
+
+void opticstor::chargerRavitaillementTable()
+{
+    // Clear the QTableWidget and refill from metier model
+    QSqlQueryModel* model = tmpMetier.afficherRavitaillement();
+    if (!ravitTable) return;
+    ravitTable->setRowCount(0);
+    ravitTable->setColumnCount(model->columnCount());
+
+    // Set headers if available
+    for (int c = 0; c < model->columnCount(); ++c) {
+        QString header = model->headerData(c, Qt::Horizontal).toString();
+        ravitTable->setHorizontalHeaderItem(c, new QTableWidgetItem(header));
+    }
+
+    for (int r = 0; r < model->rowCount(); ++r) {
+        ravitTable->insertRow(r);
+        for (int c = 0; c < model->columnCount(); ++c) {
+            QModelIndex idx = model->index(r, c);
+            QString value = model->data(idx).toString();
+            ravitTable->setItem(r, c, new QTableWidgetItem(value));
+        }
+    }
+}
+
+void opticstor::showRavContextMenu(const QPoint &pos)
+{
+    if (!ravitTable) return;
+    QTableWidgetItem* item = ravitTable->itemAt(pos);
+    if (!item) return; // not on a row
+
+    int row = item->row();
+
+    QMenu menu(this);
+    QAction *edit = menu.addAction(tr("Modifier"));
+    QAction *del = menu.addAction(tr("Supprimer"));
+
+    QAction *a = menu.exec(ravitTable->viewport()->mapToGlobal(pos));
+    if (!a) return;
+
+    // ID is in column 0 according to afficherRavitaillement()
+    QString idStr = ravitTable->item(row, 0)->text();
+    int id = idStr.toInt();
+
+    if (a == del) {
+        QMessageBox::StandardButton reply = QMessageBox::question(this, tr("Confirmer"), tr("Supprimer ce ravitaillement ?"), QMessageBox::Yes | QMessageBox::No);
+        if (reply == QMessageBox::Yes) {
+            QString err;
+            if (tmpMetier.supprimerRavitaillement(id, err)) {
+                QMessageBox::information(this, tr("Supprimé"), tr("Ravitaillement supprimé"));
+                chargerRavitaillementTable();
+            } else {
+                QMessageBox::critical(this, tr("Erreur"), tr("Impossible de supprimer : %1").arg(err));
+            }
+        }
+        return;
+    }
+
+    if (a == edit) {
+        // Open inline dialog with fields
+        QDialog dlg(this);
+        dlg.setWindowTitle(tr("Modifier Ravitaillement"));
+        QFormLayout *form = new QFormLayout(&dlg);
+
+        QLineEdit *codeEdit = new QLineEdit(&dlg);
+        QLineEdit *fournEdit = new QLineEdit(&dlg);
+        QSpinBox *qte = new QSpinBox(&dlg);
+        QTextEdit *msgEdit = new QTextEdit(&dlg);
+        QSpinBox *note = new QSpinBox(&dlg);
+
+        qte->setRange(0, 10000000);
+        note->setRange(0,5);
+
+        // Fill current values from table columns
+        QTableWidgetItem* itCode = ravitTable->item(row,1);
+        QTableWidgetItem* itFourn = ravitTable->item(row,2);
+        QTableWidgetItem* itQte = ravitTable->item(row,3);
+        QTableWidgetItem* itMsg = ravitTable->item(row,4);
+        QTableWidgetItem* itNote = ravitTable->item(row,5);
+
+        if (itCode) codeEdit->setText(itCode->text());
+        if (itFourn) fournEdit->setText(itFourn->text());
+        if (itQte) qte->setValue(itQte->text().toInt());
+        if (itMsg) msgEdit->setPlainText(itMsg->text());
+        if (itNote) note->setValue(itNote->text().toInt());
+
+        form->addRow(tr("Code Produit (laisser vide pour NULL)"), codeEdit);
+        form->addRow(tr("ID Fournisseur (laisser vide pour NULL)"), fournEdit);
+        form->addRow(tr("Quantité"), qte);
+        form->addRow(tr("Message"), msgEdit);
+        form->addRow(tr("Note (0-5)"), note);
+
+        QHBoxLayout *btnLayout = new QHBoxLayout();
+        QPushButton *save = new QPushButton(tr("Enregistrer"), &dlg);
+        QPushButton *cancelBtn = new QPushButton(tr("Annuler"), &dlg);
+        btnLayout->addWidget(save);
+        btnLayout->addWidget(cancelBtn);
+        form->addRow(btnLayout);
+
+        connect(cancelBtn, &QPushButton::clicked, &dlg, &QDialog::reject);
+        connect(save, &QPushButton::clicked, &dlg, [&]() {
+            // gather data and call modifier
+            bool okCode=false, okF=false;
+            int cval = codeEdit->text().toInt(&okCode);
+            int fval = fournEdit->text().toInt(&okF);
+            int qval = qte->value();
+            QString messageText = msgEdit->toPlainText();
+            int noteVal = note->value();
+
+            int codeParam = okCode ? cval : -1;
+            int fournParam = okF ? fval : -1;
+
+            QString err;
+            bool ok2 = tmpMetier.modifierRavitaillement(id, codeParam, fournParam, qval, messageText, noteVal, err);
+            if (!ok2) {
+                QMessageBox::critical(&dlg, tr("Erreur"), tr("La modification a échoué: %1").arg(err));
+            } else {
+                QMessageBox::information(&dlg, tr("OK"), tr("Ravitaillement modifié"));
+                dlg.accept();
+                chargerRavitaillementTable();
+            }
+        });
+
+        dlg.exec();
+    }
+}
+
+void opticstor::chargerTableFournisseurs()
+{
+    ui->tableWidget_22->setModel(tmpFournisseur.afficher());
 }
 
 opticstor::~opticstor()

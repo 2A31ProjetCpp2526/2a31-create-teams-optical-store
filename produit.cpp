@@ -130,7 +130,8 @@ QList<Produit> Produit::getAllProduits()
     QList<Produit> produits;
     QSqlQuery query;
 
-    query.prepare("SELECT CODE_PRODUIT, ID_FOURNISSEUR, MARQUE, TYPE FROM PRODUIT");
+    // Select full product info including stock and price
+    query.prepare("SELECT CODE_PRODUIT, ID_FOURNISSEUR, MARQUE, TYPE, QUANTITE_STOCK, PRIX FROM PRODUIT");
 
     if (query.exec()) {
         while (query.next()) {
@@ -139,8 +140,8 @@ QList<Produit> Produit::getAllProduits()
             p.setIdFournisseur(query.value(1).toInt());
             p.setMarque(query.value(2).toString());
             p.setType(query.value(3).toString());
-            p.setQuantiteStock(query.value(0).toInt());;  // Valeur par défaut
-            p.setPrix(query.value(0).toInt());;        // Valeur par défaut plus réaliste
+            p.setQuantiteStock(query.value(4).toInt());
+            p.setPrix(query.value(5).toFloat());
 
             produits.append(p);
         }

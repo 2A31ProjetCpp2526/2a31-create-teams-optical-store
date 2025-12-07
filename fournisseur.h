@@ -10,38 +10,42 @@
 class Fournisseur
 {
 private:
-    int id_fournisseur;
-    QString nom_entreprise;
-    QString telephone;
-    QString email;
+    int ID_FOURNISSEUR;
+    QString NOM;
+    QString PRENOM;
+    QString TELEPHONE;
+    QString EMAIL;
+    QString TYPE;
 
 public:
     // Constructeurs
-    Fournisseur();
-    Fournisseur(int id, QString nom_entreprise, QString telephone, QString email);
-    Fournisseur(QString nom_entreprise, QString telephone, QString email);
+    Fournisseur();  // Constructeur par défaut
+    Fournisseur(QString nom, QString prenom, QString telephone, QString email, QString type);  // Avec paramètres
+    Fournisseur(int id, QString nom, QString prenom, QString telephone, QString email, QString type);  // Avec ID
 
     // Getters
-    int getId() const { return id_fournisseur; }
-    QString getNomEntreprise() const { return nom_entreprise; }
-    QString getTelephone() const { return telephone; }
-    QString getEmail() const { return email; }
+    int getId() const { return ID_FOURNISSEUR; }
+    QString getNom() const { return NOM; }
+    QString getPrenom() const { return PRENOM; }
+    QString getTelephone() const { return TELEPHONE; }
+    QString getEmail() const { return EMAIL; }
+    QString getType() const { return TYPE; }
 
     // Setters
-    void setId(int id) { id_fournisseur = id; }
-    void setNomEntreprise(const QString& nom) { nom_entreprise = nom; }
-    void setTelephone(const QString& tel) { telephone = tel; }
-    void setEmail(const QString& em) { email = em; }
+    void setId(int id) { ID_FOURNISSEUR = id; }
+    void setNom(const QString& nom) { NOM = nom; }
+    void setPrenom(const QString& prenom) { PRENOM = prenom; }
+    void setTelephone(const QString& tel) { TELEPHONE = tel; }
+    void setEmail(const QString& email) { EMAIL = email; }
+    void setType(const QString& type) { TYPE = type; }
 
     // Fonctions CRUD
     bool ajouter();
     QSqlQueryModel* afficher();
+    QSqlQueryModel* afficherTrie(const QString& orderBy);
     bool supprimer(int id);
     bool modifier(int id);
     QSqlQueryModel* rechercher(const QString& mot_cle, const QString& colonne);
-
-    // Vérifier si un fournisseur existe
-    static bool verifierExistence(int id);
 };
 
 #endif // FOURNISSEUR_H
